@@ -5,9 +5,13 @@
 ## Progress (In partially descending order)
 - [x] Basic version with MVP of proof of concept
 - [ ] Monitor editor setup w/programmatic setup
-- [ ] Better detection methods
+  - [ ] Basic
+  - [ ] Advanced
+- [ ] Increased support to >2 monitors (programmatically)
+- [ ] Better detection methods + w/ switching
+- [ ] Automatic monitor count + general location detection
 - [ ] Persistent settings storage 
-- [ ] Efficiency overhaul
+- [ ] Efficiency overhaul (reoccurring as needed)
 - [ ] Port and full shift to c++
 - [ ] Cross-platform support/versions
 - [ ] Test cases setup

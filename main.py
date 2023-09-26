@@ -3,7 +3,19 @@ import mediapipe as mp
 import pyautogui
 import numpy as np
 
-QUIT_KEY = "q"
+KEY_QUIT                    = "q"
+KEY_TOGGLE_PAUSE            = " "
+KEY_AUTO_SET_SECOND         = "2"
+KEY_MANUAL_BLINK_TRIGGER    = "b"
+KEY_BLANK_BACKGROUND_SWITCH = "s"
+
+# Stored to avoid recalculating every frame
+KEY_ORD_KEY_QUIT                = ord(KEY_QUIT)
+KEY_ORD_TOGGLE_PAUSE            = ord(KEY_TOGGLE_PAUSE)
+KEY_ORD_AUTO_SET_SECOND         = ord(KEY_AUTO_SET_SECOND)
+KEY_ORD_MANUAL_BLINK_TRIGGER    = ord(KEY_MANUAL_BLINK_TRIGGER)
+KEY_ORD_BLANK_BACKGROUND_SWITCH = ord(KEY_BLANK_BACKGROUND_SWITCH)
+
 font = cv2.FONT_HERSHEY_SIMPLEX
 
 screen_w, screen_h = pyautogui.size()
@@ -88,11 +100,11 @@ def setPercentageOfPoints(percentageOf100):
     #cv2.putText(frame, " LEFT: " + str(int(leftCount / 478 * 100)) + "%", (40, 50), font, 1, SCALAR_COLOR_RED, 2, cv2.LINE_AA)
 
 
-def secondMonitorScaleTriggerd(): # Make change halfway between 50% and second monitor
+def secondMonitorScaleTriggerd(percentage): # Make change between 50% and second monitor. Percentage should be between 0 & 1, recomended is 0.5
     global cutoff
     global cutoffPercentage
     global leftCount
-    cutoff = (leftCount - 478/2)/2+(478/2)
+    cutoff = (leftCount - 478/2)/2+(478*percentage)
     cutoffPercentage = int(cutoff/478*100)
 
 # TRIGGERS
@@ -172,7 +184,7 @@ while True:
             cv2.putText(frame, "RIGHT: "+str(int(rightCount/478*100))+"%", (40, 100), font, 1, SCALAR_COLOR_LIGHTER_BLUE, 2, cv2.LINE_AA)
             cv2.putText(frame, "Cursr: "+str(pyautogui.position()), (40, 150), font, 1, SCALAR_COLOR_ORANGE, 2, cv2.LINE_AA)
 
-            cv2.putText(frame, "Press the 'r' key while looking at your second monitor", (15, 650), font, 1, SCALAR_COLOR_GREEN, 1, cv2.LINE_AA)
+            cv2.putText(frame, "Press the '"+KEY_AUTO_SET_SECOND+"' key while looking at your second monitor", (15, 650), font, 1, SCALAR_COLOR_GREEN, 1, cv2.LINE_AA)
             cv2.putText(frame, "to auto-set second monitor location", (15, 700), font, 1, SCALAR_COLOR_GREEN, 1, cv2.LINE_AA)
 
             if leftCount < cutoff and inMainMonitor:
@@ -238,9 +250,9 @@ while True:
         cv2.imshow(frameWindowTitle, frame)
 
     k = cv2.waitKey(1) & 0xff
-    if k == 27:
+    if k == 27:  # (Escape key)
         break
-    elif k == 32:  # (Spacebar key)
+    elif k == KEY_ORD_TOGGLE_PAUSE:  # (Pause toggle w/ cam shutoff)
         if(paused):  # If already paused, take control of the capture again
             print("Restarting camera stream")
             cam = cv2.VideoCapture(videoCaptureDeviceId)
@@ -248,20 +260,21 @@ while True:
             print("Stopping camera stream")
             cam = 0  # Destroys object, stops taking up stream
         paused = not paused
-    elif k == 115:  # (S KEY)
+    elif k == KEY_ORD_BLANK_BACKGROUND_SWITCH:  # (Switch blank background display)
         frame_blank = not frame_blank
         print("Toggling show rgb to "+str(frame_blank))
-    elif k == 98:  # (B KEY)
+    elif k == KEY_ORD_MANUAL_BLINK_TRIGGER:  # (Manually trigger blink)
         print("Manual blink command")
         onBlick()
-    elif k == 114:  # ('2' KEY)
+    elif k == KEY_ORD_AUTO_SET_SECOND:  # (2nd monitor auto)
         print("Automatic setting of right side second monitor")
-        secondMonitorScaleTriggerd()
+        secondMonitorScaleTriggerd(0.5)
+
     elif k == 13:  # (ENTER KEY) ord(RESET_KEY):
         print("Enter key")
     elif k == 127:  # Backspace
         print("Backspace")
-    elif k == ord(QUIT_KEY):
+    elif k == KEY_ORD_KEY_QUIT:
         break
     elif k != ord("ÿ"):  # Any key
         print("The key you pressed had an number of \""+str(k)+"\"")
