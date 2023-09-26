@@ -8,7 +8,8 @@ font = cv2.FONT_HERSHEY_SIMPLEX
 
 screen_w, screen_h = pyautogui.size()
 
-cam = cv2.VideoCapture(0)
+videoCaptureDeviceId = 0
+cam = cv2.VideoCapture(videoCaptureDeviceId)
 face_mesh = mp.solutions.face_mesh.FaceMesh(refine_landmarks=True)
 # Set face_mesh settings
 face_mesh.num_faces = 1
@@ -70,6 +71,8 @@ rightDividerSectionABottom = (0, 0)
 cutoff = 269  #Default value (works with my primary setup)
 cutoffPercentage = int(cutoff/478*100)
 
+helperStep = 0
+
 # BUTTON PRESS FUNCTIONS
 def nothing(x):
     pass
@@ -78,6 +81,32 @@ def setPercentageOfPoints(percentageOf100):
     global cutoffPercentage
     cutoffPercentage = percentageOf100
     cutoff = int(percentageOf100 / 100 * 478)
+
+# SETUP HELPER
+#  Setup helper tutorial
+# def helperMessager():
+    #cv2.putText(frame, " LEFT: " + str(int(leftCount / 478 * 100)) + "%", (40, 50), font, 1, SCALAR_COLOR_RED, 2, cv2.LINE_AA)
+
+
+def secondMonitorScaleTriggerd(): # Make change halfway between 50% and second monitor
+    global cutoff
+    global cutoffPercentage
+    global leftCount
+    cutoff = (leftCount - 478/2)/2+(478/2)
+    cutoffPercentage = int(cutoff/478*100)
+
+# TRIGGERS
+def onBlick():
+    global show_faceOutline
+    global show_allPoints
+
+    print("Blinked!")
+    show_faceOutline = show_allPoints
+    show_allPoints = not show_allPoints
+
+
+# leftCount = -1  # as always has +1
+# rightCount = 0
 
 while True:
     if not paused:
@@ -91,8 +120,12 @@ while True:
         frame_h, frame_w, _ = frame.shape
         if frame_blank:
             frame = np.zeros((frame_h, frame_w, 3), dtype=np.uint8)
+
+        # GRAPHICAL UI OPTIONS
         # "Secondary Monitor Left %"
         cv2.createTrackbar("Left:", frameWindowTitle, cutoffPercentage, 100, setPercentageOfPoints)
+
+        # setupHelperTutorial();
 
         leftCount = -1  #as always has +1
         rightCount = 0
@@ -120,11 +153,6 @@ while True:
             cv2.line(frame, leftDividerSectionATop, leftDividerSectionABottom, SCALAR_COLOR_ORANGE, 2)
             cv2.line(frame, rightDividerSectionATop, rightDividerSectionABottom, SCALAR_COLOR_ORANGE, 2)
 
-            # cv2.circle(frame, (xAvgTop, yAvgTop), 4, SCALAR_COLOR_YELLOW, -1)
-            # cv2.circle(frame, (xAvgBottom, yAvgBottom), 4, SCALAR_COLOR_GREEN, -1)
-            # for id, landmark in enumerate(landmarks[0:478]):
-            #     cv2.circle(frame, (int(landmark.x * frame_w), int(landmark.y * frame_h)), 4, SCALAR_COLOR_RED, -1)
-
             # ALL POINTS
             for id, landmark in enumerate(landmarks):
             # for id, landmark in enumerate(landmarks[474:480]):
@@ -132,7 +160,7 @@ while True:
                 y = int(landmark.y * frame_h)
                 if x < centerPoint.x * frame_w:
                     leftCount = leftCount + 1
-                    color = SCALAR_COLOR_RED  #TODO: Make more efficent when not selected
+                    color = SCALAR_COLOR_RED  #TODO: Make more efficient when not selected
                 else:
                     rightCount = rightCount + 1
                     color = SCALAR_COLOR_LIGHTER_BLUE
@@ -143,6 +171,9 @@ while True:
             cv2.putText(frame, " LEFT: "+str(int(leftCount/478*100))+"%", (40, 50), font, 1, SCALAR_COLOR_RED, 2, cv2.LINE_AA)
             cv2.putText(frame, "RIGHT: "+str(int(rightCount/478*100))+"%", (40, 100), font, 1, SCALAR_COLOR_LIGHTER_BLUE, 2, cv2.LINE_AA)
             cv2.putText(frame, "Cursr: "+str(pyautogui.position()), (40, 150), font, 1, SCALAR_COLOR_ORANGE, 2, cv2.LINE_AA)
+
+            cv2.putText(frame, "Press the 'r' key while looking at your second monitor", (15, 650), font, 1, SCALAR_COLOR_GREEN, 1, cv2.LINE_AA)
+            cv2.putText(frame, "to auto-set second monitor location", (15, 700), font, 1, SCALAR_COLOR_GREEN, 1, cv2.LINE_AA)
 
             if leftCount < cutoff and inMainMonitor:
                 inMainMonitor = False
@@ -174,9 +205,7 @@ while True:
                 y = int(landmark.y * frame_h)
                 cv2.circle(frame, (x, y), size_primaries, color_leftIris, size_borderPrimaries)
             if (left[0].y - left[1].y) < 0.004:
-                print("Blinked!")
-                show_faceOutline = show_allPoints
-                show_allPoints = not show_allPoints
+                onBlick()
             # Pupils
             if show_pupils:
                 lPupil = 468
@@ -211,15 +240,28 @@ while True:
     k = cv2.waitKey(1) & 0xff
     if k == 27:
         break
-    # elif k != ord("ÿ"):  # Any key
     elif k == 32:  # (Spacebar key)
+        if(paused):  # If already paused, take control of the capture again
+            print("Restarting camera stream")
+            cam = cv2.VideoCapture(videoCaptureDeviceId)
+        else:        # If needs to pause
+            print("Stopping camera stream")
+            cam = 0  # Destroys object, stops taking up stream
         paused = not paused
     elif k == 115:  # (S KEY)
         frame_blank = not frame_blank
         print("Toggling show rgb to "+str(frame_blank))
+    elif k == 98:  # (B KEY)
+        print("Manual blink command")
+        onBlick()
+    elif k == 114:  # ('2' KEY)
+        print("Automatic setting of right side second monitor")
+        secondMonitorScaleTriggerd()
     elif k == 13:  # (ENTER KEY) ord(RESET_KEY):
         print("Enter key")
     elif k == 127:  # Backspace
         print("Backspace")
     elif k == ord(QUIT_KEY):
         break
+    elif k != ord("ÿ"):  # Any key
+        print("The key you pressed had an number of \""+str(k)+"\"")
