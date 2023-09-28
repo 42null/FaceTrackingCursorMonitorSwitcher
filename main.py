@@ -1,3 +1,5 @@
+import math
+
 import cv2
 import mediapipe as mp
 import pyautogui
@@ -29,11 +31,18 @@ face_mesh.num_faces = 1
 frameWindowTitle = "Facial Monitor Cursor Switching View Frame"
 windowWidth = 840
 
-meshPointsFaceOutline = [
-    10,  338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288,
+meshPointsFaceOutline = [ #Ordered clockwise
+     10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288,
     397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136,
-    172, 58,  132, 93,  234, 127, 162, 21,  54,  103, 67,  109
+    172,  58, 132,  93, 234, 127, 162,  21,  54, 103,  67, 109
 ]
+
+meshPointsFaceCenterLine = [ #Ordered top to bottom
+     10, 151,   9,   8, 168,   6, 197, 195,   5,   4,   1,  19,
+     94,   2, 164,   0,  11,  12,  13,  14,  15,  16,  17,  18,
+    200, 199, 175, 152
+]
+
 
 meshPointsCenterPointIndex = 1
 
@@ -45,6 +54,10 @@ SCALAR_COLOR_YELLOW        = (0, 255, 255)
 SCALAR_COLOR_ORANGE        = (0, 165, 255)
 SCALAR_COLOR_PURPLE        = (128, 0, 128)
 SCALAR_COLOR_PURPLE_BRIGHT = (255, 0, 255)
+SCALAR_COLOR_GRAY          = (100,100,100)
+
+color_data_NA                 = SCALAR_COLOR_GRAY
+color_calculatedSeperatorLine = SCALAR_COLOR_ORANGE
 
 color_faceOutline = SCALAR_COLOR_GREEN
 color_pupilLeft   = SCALAR_COLOR_PURPLE_BRIGHT
@@ -137,14 +150,25 @@ while True:
         # "Secondary Monitor Left %"
         cv2.createTrackbar("Left:", frameWindowTitle, cutoffPercentage, 100, setPercentageOfPoints)
 
+        # Always on text
+        cv2.putText(frame, "Press the '" + KEY_AUTO_SET_SECOND + "' key while looking at your second monitor", (15, 650), font, 1, SCALAR_COLOR_GREEN, 1, cv2.LINE_AA)
+        cv2.putText(frame, "to auto-set second monitor location" + ("" if landmark_points else " (face needs to be detected)"), (15, 700), font, 1, SCALAR_COLOR_GREEN, 1, cv2.LINE_AA)
+
+        # Show counter values
+        cv2.putText(frame, " LEFT: ", (40, 50), font, 1, SCALAR_COLOR_RED, 2, cv2.LINE_AA)
+        cv2.putText(frame, "RIGHT: ", (40, 100), font, 1, SCALAR_COLOR_LIGHTER_BLUE, 2, cv2.LINE_AA)
+        cv2.putText(frame, "Cursr: ", (40, 150), font, 1, SCALAR_COLOR_ORANGE, 2, cv2.LINE_AA)
+
         # setupHelperTutorial();
 
         leftCount = -1  #as always has +1
         rightCount = 0
 
+        boxDisplayColorHolder = color_data_NA
+
         if landmark_points:
             landmarks = landmark_points[0].landmark
-            centerPoint = landmarks[meshPointsCenterPointIndex]
+            centerPoint = (landmarks[meshPointsCenterPointIndex].x, landmarks[meshPointsCenterPointIndex].y)
 
             xAvgTop = int((landmarks[93].x + landmarks[127].x)/2 * frame_w)
             yAvgTop = int((landmarks[93].y + landmarks[127].y)/2 * frame_h)
@@ -162,15 +186,37 @@ while True:
             rightDividerSectionATop = (xAvgTop + (xAvgTop - xAvgBottom), yAvgTop + (yAvgTop - yAvgBottom))
             rightDividerSectionABottom = (xAvgBottom - (xAvgTop - xAvgBottom), yAvgBottom - (yAvgTop - yAvgBottom))
 
-            cv2.line(frame, leftDividerSectionATop, leftDividerSectionABottom, SCALAR_COLOR_ORANGE, 2)
-            cv2.line(frame, rightDividerSectionATop, rightDividerSectionABottom, SCALAR_COLOR_ORANGE, 2)
+            cv2.line(frame, leftDividerSectionATop, leftDividerSectionABottom, color_calculatedSeperatorLine, 2)
+            cv2.line(frame, rightDividerSectionATop, rightDividerSectionABottom, color_calculatedSeperatorLine, 2)
+
+            nextPoint = (int(landmarks[meshPointsFaceCenterLine[0]].x * frame_w), int(landmarks[meshPointsFaceCenterLine[0]].y * frame_h))
+            originalPoint = nextPoint
+
+            for i in range(len(meshPointsFaceCenterLine) - 1):
+                # Access the element at the current index
+                oldPoint = nextPoint
+                nextPoint = (int(landmarks[meshPointsFaceCenterLine[i + 1]].x * frame_w),
+                             int(landmarks[meshPointsFaceCenterLine[i + 1]].y * frame_h))
+                cv2.line(frame, oldPoint, nextPoint, color_calculatedSeperatorLine, 2)
+            # Connect back to front
+            cv2.line(frame, originalPoint, nextPoint, SCALAR_COLOR_GREEN, 1)
+
+            # Center-point between top and bottom
+            centerInsideFaceX = int(originalPoint[0] + (nextPoint[0] - originalPoint[0]) / 2)
+            centerInsideFaceY = int(originalPoint[1] + (nextPoint[1] - originalPoint[1]) / 2)
+
+            centerPoint = (centerInsideFaceX, centerInsideFaceY) #Overrride landmark tip of nose
+            # centerPoint = (int(landmarks[meshPointsCenterPointIndex].x * frame_w), int(landmarks[meshPointsCenterPointIndex].y * frame_h))
+            cv2.circle(frame, centerPoint, size_primaries, SCALAR_COLOR_PURPLE_BRIGHT, 6)
+
+
 
             # ALL POINTS
             for id, landmark in enumerate(landmarks):
             # for id, landmark in enumerate(landmarks[474:480]):
                 x = int(landmark.x * frame_w)
                 y = int(landmark.y * frame_h)
-                if x < centerPoint.x * frame_w:
+                if x < centerPoint[0]:
                     leftCount = leftCount + 1
                     color = SCALAR_COLOR_RED  #TODO: Make more efficient when not selected
                 else:
@@ -180,12 +226,9 @@ while True:
                     cv2.circle(frame, (x, y), size_allPoints, color, size_borderAllPoints)
 
             # Show counter values
-            cv2.putText(frame, " LEFT: "+str(int(leftCount/478*100))+"%", (40, 50), font, 1, SCALAR_COLOR_RED, 2, cv2.LINE_AA)
-            cv2.putText(frame, "RIGHT: "+str(int(rightCount/478*100))+"%", (40, 100), font, 1, SCALAR_COLOR_LIGHTER_BLUE, 2, cv2.LINE_AA)
-            cv2.putText(frame, "Cursr: "+str(pyautogui.position()), (40, 150), font, 1, SCALAR_COLOR_ORANGE, 2, cv2.LINE_AA)
-
-            cv2.putText(frame, "Press the '"+KEY_AUTO_SET_SECOND+"' key while looking at your second monitor", (15, 650), font, 1, SCALAR_COLOR_GREEN, 1, cv2.LINE_AA)
-            cv2.putText(frame, "to auto-set second monitor location", (15, 700), font, 1, SCALAR_COLOR_GREEN, 1, cv2.LINE_AA)
+            cv2.putText(frame, str(int(leftCount/478*100))+"%", (150, 50), font, 1, SCALAR_COLOR_RED, 2, cv2.LINE_AA)  # left
+            cv2.putText(frame, str(int(rightCount/478*100))+"%", (150, 100), font, 1, SCALAR_COLOR_LIGHTER_BLUE, 2, cv2.LINE_AA) # right
+            cv2.putText(frame, str(pyautogui.position()), (150, 150), font, 1, SCALAR_COLOR_ORANGE, 2, cv2.LINE_AA) # cursor
 
             if leftCount < cutoff and inMainMonitor:
                 inMainMonitor = False
@@ -198,9 +241,9 @@ while True:
             # else # cutoff line does not trigger change, stays as it was
 
             if inMainMonitor:
-                cv2.rectangle(frame, (40, 180), (90, 230), SCALAR_COLOR_LIGHTER_BLUE, -1)
+                boxDisplayColorHolder = SCALAR_COLOR_LIGHTER_BLUE
             else:
-                cv2.rectangle(frame, (40, 180), (90, 230), SCALAR_COLOR_RED, -1)
+                boxDisplayColorHolder = SCALAR_COLOR_RED
 
             # Iris's
             for id, landmark in enumerate(landmarks[474:478]):
@@ -226,7 +269,7 @@ while True:
                 cv2.circle(frame, (int(landmarks[rPupil].x * frame_w), int(landmarks[rPupil].y * frame_h)), size_primaries, color_pupilRight, size_borderPupilBasic)
             # Center point
             if centerPoint:
-                cv2.circle(frame, (int(centerPoint.x * frame_w), int(centerPoint.y * frame_h)), size_primaries, color_centerPoint, size_borderPrimaries)
+                cv2.circle(frame, (int(centerPoint[0] * frame_w), int(centerPoint[1] * frame_h)), size_primaries, color_centerPoint, size_borderPrimaries)
 
             # Outer face outline
             if show_faceOutline:
@@ -241,6 +284,10 @@ while True:
                     cv2.line(frame, oldPoint, nextPoint, color_faceOutline, 1)
                 # Connect back to front
                 cv2.line(frame, originalPoint, nextPoint, color_faceOutline, 1)
+
+
+        # CONTINUE ALWAYS SHOW UI ELEMENTS
+        cv2.rectangle(frame, (55, 180), (105, 230), boxDisplayColorHolder, -1) # Should be gray by default
 
 
         # Create a named window with the specified width
