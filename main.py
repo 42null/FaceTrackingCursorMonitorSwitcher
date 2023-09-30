@@ -1,22 +1,26 @@
-import math
-
 import cv2
 import mediapipe as mp
 import pyautogui
 import numpy as np
+from pynput.mouse import Listener as MouseListener
+import pynput.mouse
+import threading
+import time
 
-KEY_QUIT                    = "q"
-KEY_TOGGLE_PAUSE            = " "
-KEY_AUTO_SET_SECOND         = "2"
-KEY_MANUAL_BLINK_TRIGGER    = "b"
-KEY_BLANK_BACKGROUND_SWITCH = "s"
+KEY_QUIT                       = 'q'
+KEY_TOGGLE_PAUSE               = ' '
+KEY_AUTO_SET_SECOND            = '2'
+KEY_MANUAL_BLINK_TRIGGER       = 'b'
+KEY_BLANK_BACKGROUND_SWITCH    = 's'
+KEY_ALLOW_SWITCH_ON_MOUSE_DRAG = 'd'
 
 # Stored to avoid recalculating every frame
-KEY_ORD_KEY_QUIT                = ord(KEY_QUIT)
-KEY_ORD_TOGGLE_PAUSE            = ord(KEY_TOGGLE_PAUSE)
-KEY_ORD_AUTO_SET_SECOND         = ord(KEY_AUTO_SET_SECOND)
-KEY_ORD_MANUAL_BLINK_TRIGGER    = ord(KEY_MANUAL_BLINK_TRIGGER)
-KEY_ORD_BLANK_BACKGROUND_SWITCH = ord(KEY_BLANK_BACKGROUND_SWITCH)
+KEY_ORD_KEY_QUIT                   = ord(KEY_QUIT)
+KEY_ORD_TOGGLE_PAUSE               = ord(KEY_TOGGLE_PAUSE)
+KEY_ORD_AUTO_SET_SECOND            = ord(KEY_AUTO_SET_SECOND)
+KEY_ORD_MANUAL_BLINK_TRIGGER       = ord(KEY_MANUAL_BLINK_TRIGGER)
+KEY_ORD_BLANK_BACKGROUND_SWITCH    = ord(KEY_BLANK_BACKGROUND_SWITCH)
+KEY_ORD_ALLOW_SWITCH_ON_MOUSE_DRAG = ord(KEY_ALLOW_SWITCH_ON_MOUSE_DRAG)
 
 font = cv2.FONT_HERSHEY_SIMPLEX
 
@@ -75,33 +79,35 @@ size_borderPupilBasic = -1 #TODO: Make able to take percentages and caculate to 
 size_allPoints        = 1
 size_borderAllPoints  = -1
 
-# SKIP OPTIONS
+# OPTIONS
 frame_blank = True
+allow_switch_when_dragging = False
+paused = False
 
 show_allPoints   = True
 show_faceOutline = False
 show_pupils      = True
 
-
-paused = False
-mainMonitorMousePos = pyautogui.position()
-secondaryMonitorMousePos = pyautogui.position()
+savedMonitorMousePositions = [pyautogui.position(), pyautogui.position()]
 inMainMonitor = True
+mouseButtonTracker = [ False, False, False ]
+lastLeftMouseLocationBeforeDrag = pyautogui.position()
+lastLeftMouseMonitorBeforeDrag = 0  #Assume starting in primary monitor, TODO: Move to area where get_monitor... is defined
+
 
 leftDividerSectionATop = (0, 0)
 leftDividerSectionABottom = (0, 0)
 rightDividerSectionATop = (0, 0)
 rightDividerSectionABottom = (0, 0)
 
-cutoff = 269  #Default value (works with my primary setup)
+cutoff = 215  #Default values (works with my primary setup) 269 = tip of nose version, 215 for insideFaceCenter
 cutoffPercentage = int(cutoff/478*100)
 
 helperStep = 0
 
 # BUTTON PRESS FUNCTIONS
-def nothing(x):
-    pass
-def setPercentageOfPoints(percentageOf100):
+
+def set_percentage_of_points(percentageOf100):
     global cutoff
     global cutoffPercentage
     cutoffPercentage = percentageOf100
@@ -113,7 +119,7 @@ def setPercentageOfPoints(percentageOf100):
     #cv2.putText(frame, " LEFT: " + str(int(leftCount / 478 * 100)) + "%", (40, 50), font, 1, SCALAR_COLOR_RED, 2, cv2.LINE_AA)
 
 
-def secondMonitorScaleTriggerd(percentage): # Make change between 50% and second monitor. Percentage should be between 0 & 1, recomended is 0.5
+def on_second_monitor_scale_triggerd(percentage): # Make change between 50% and second monitor. Percentage should be between 0 & 1, recomended is 0.5
     global cutoff
     global cutoffPercentage
     global leftCount
@@ -121,7 +127,7 @@ def secondMonitorScaleTriggerd(percentage): # Make change between 50% and second
     cutoffPercentage = int(cutoff/478*100)
 
 # TRIGGERS
-def onBlick():
+def on_blink():
     global show_faceOutline
     global show_allPoints
 
@@ -129,9 +135,84 @@ def onBlick():
     show_faceOutline = show_allPoints
     show_allPoints = not show_allPoints
 
+def on_move(x, y):
+    pass
 
-# leftCount = -1  # as always has +1
-# rightCount = 0
+def on_click(x, y, mouseButton, pressed):
+    global lastLeftMouseMonitorBeforeDrag  # Remove and just check off of mouse coordinates?
+    global lastLeftMouseLocationBeforeDrag
+
+    mouseButton = str(mouseButton)
+    # print(f"Mouse button {mouseButton} clicked at ({x}, {y})")
+    if pressed:
+        if mouseButton == "Button.left":
+            mouseButtonTracker[0] = True
+            lastLeftMouseLocationBeforeDrag = (x, y)
+            lastLeftMouseMonitorBeforeDrag = get_mouse_located_in_monitor_num()
+        elif mouseButton == "Button.right":
+            mouseButtonTracker[1] = True
+        elif mouseButton == "Button.middle":
+            mouseButtonTracker[2] = True
+    else:
+        if mouseButton == "Button.left":
+            mouseButtonTracker[0] = False
+            # lastLeftMouseLocationBeforeDrag = (None, None)
+        elif mouseButton == "Button.right":
+            mouseButtonTracker[1] = False
+        elif mouseButton == "Button.middle":
+            mouseButtonTracker[2] = False
+
+# At present, this function is never called for some reason, using only on_click() workaround
+def on_release(x, y, mouseButton):
+    mouseButton = str(mouseButton)
+    print(f"Mouse button {mouseButton} released at ({x}, {y})")
+    if mouseButton == "Button.left":
+        mouseButtonTracker[0] = False
+    elif mouseButton == "Button.right":
+        mouseButtonTracker[1] = False
+    elif mouseButton == "Button.middle":
+        mouseButtonTracker[2] = False
+
+# Start the mouse tracking in another thread so that it can run at the same time
+mouseListener = MouseListener(on_click=on_click, on_release=on_release, on_move=on_move)
+mouseThread = threading.Thread(target=mouseListener.start)
+mouseThread.start()
+
+
+# At present, crashes entire program if used
+# def get_if_any_mouse_buttons_held():
+#     mouse_info = pyautogui.mouseInfo()
+#     return (False if mouse_info["left"] is None else True) or (False if mouse_info["right"] is None else True) or (False if mouse_info["middle"] is None else True)
+
+def get_if_any_mouse_buttons_held():
+    return mouseButtonTracker[0] or mouseButtonTracker[1] or mouseButtonTracker[2]
+
+def get_if_in_main_monitor():
+    mouseX, mouseY = pyautogui.position()
+    return pyautogui.onScreen(mouseX, mouseY)  #pyautogui only supports 1 monitor so as even though the position is valid on a diffrent screen, pyautogui does not count it
+
+# Currently only works with 2 monitors as pyautogui only supports main monitor
+def get_mouse_located_in_monitor_num():  #Index starts at 0 (main monitor)
+    if get_if_in_main_monitor():
+        return 0
+    else:
+        return 1
+
+def monitor_move_cutoff_with_check():
+    global inMainMonitor
+    wasChanged = True
+    if leftCount < cutoff and inMainMonitor:
+        inMainMonitor = False
+        savedMonitorMousePositions[0] = pyautogui.position()
+        pyautogui.moveTo(savedMonitorMousePositions[1])
+    elif leftCount > cutoff and not inMainMonitor:
+        inMainMonitor = True
+        savedMonitorMousePositions[1] = pyautogui.position()
+        pyautogui.moveTo(savedMonitorMousePositions[0])
+    else:
+        wasChanged = False
+    return wasChanged
+
 
 while True:
     if not paused:
@@ -148,16 +229,18 @@ while True:
 
         # GRAPHICAL UI OPTIONS
         # "Secondary Monitor Left %"
-        cv2.createTrackbar("Left:", frameWindowTitle, cutoffPercentage, 100, setPercentageOfPoints)
+        cv2.createTrackbar("Left:", frameWindowTitle, cutoffPercentage, 100, set_percentage_of_points)
 
         # Always on text
         cv2.putText(frame, "Press the '" + KEY_AUTO_SET_SECOND + "' key while looking at your second monitor", (15, 650), font, 1, SCALAR_COLOR_GREEN, 1, cv2.LINE_AA)
-        cv2.putText(frame, "to auto-set second monitor location" + ("" if landmark_points else " (face needs to be detected)"), (15, 700), font, 1, SCALAR_COLOR_GREEN, 1, cv2.LINE_AA)
+        # cv2.putText(frame, "to auto-set second monitor location" + ("" if landmark_points else " (face needs to be detected)"), (15, 700), font, 1, SCALAR_COLOR_GREEN, 1, cv2.LINE_AA)
+        cv2.putText(frame, f"to auto-set second monitor location{'' if landmark_points else ' (face needs to be detected)'}",(15, 700), font, 1, SCALAR_COLOR_GREEN, 1, cv2.LINE_AA)
 
         # Show counter values
         cv2.putText(frame, " LEFT: ", (40, 50), font, 1, SCALAR_COLOR_RED, 2, cv2.LINE_AA)
         cv2.putText(frame, "RIGHT: ", (40, 100), font, 1, SCALAR_COLOR_LIGHTER_BLUE, 2, cv2.LINE_AA)
         cv2.putText(frame, "Cursr: ", (40, 150), font, 1, SCALAR_COLOR_ORANGE, 2, cv2.LINE_AA)
+
 
         # setupHelperTutorial();
 
@@ -230,20 +313,29 @@ while True:
             cv2.putText(frame, str(int(rightCount/478*100))+"%", (150, 100), font, 1, SCALAR_COLOR_LIGHTER_BLUE, 2, cv2.LINE_AA) # right
             cv2.putText(frame, str(pyautogui.position()), (150, 150), font, 1, SCALAR_COLOR_ORANGE, 2, cv2.LINE_AA) # cursor
 
-            if leftCount < cutoff and inMainMonitor:
-                inMainMonitor = False
-                mainMonitorMousePos = pyautogui.position()
-                pyautogui.moveTo(secondaryMonitorMousePos)
-            elif leftCount > cutoff and not inMainMonitor:
-                inMainMonitor = True
-                secondaryMonitorMousePos = pyautogui.position()
-                pyautogui.moveTo(mainMonitorMousePos)
+            # if allow_switch_when_dragging or (not get_if_any_mouse_buttons_held()):
+            if allow_switch_when_dragging:  #Ignoreing dragging
+                monitor_move_cutoff_with_check()
+            elif not get_if_any_mouse_buttons_held():  #Not ignoring dragging and not held
+                # if lastLeftMouseLocationBeforeDrag[0] is None:  #For after dragging, see if in a new monitor
+                if lastLeftMouseMonitorBeforeDrag is get_mouse_located_in_monitor_num():  #Same monitor
+                    monitor_move_cutoff_with_check()
+                else:  #Diffrent Monitor
+                    tempCurrentPosStore = pyautogui.position()
+                    if(monitor_move_cutoff_with_check()): #If monitor changed
+                        savedMonitorMousePositions[lastLeftMouseMonitorBeforeDrag] = lastLeftMouseLocationBeforeDrag  #Make saved position of the previous monitor the location before the drag
+                        savedMonitorMousePositions[get_mouse_located_in_monitor_num()] = pyautogui.position()
+                        pyautogui.moveTo(tempCurrentPosStore)
+                    lastLeftMouseMonitorBeforeDrag = get_mouse_located_in_monitor_num()  # Reset so it is not called again
+
+
+
             # else # cutoff line does not trigger change, stays as it was
 
             if inMainMonitor:
-                boxDisplayColorHolder = SCALAR_COLOR_LIGHTER_BLUE
-            else:
                 boxDisplayColorHolder = SCALAR_COLOR_RED
+            else:
+                boxDisplayColorHolder = SCALAR_COLOR_LIGHTER_BLUE
 
             # Iris's
             for id, landmark in enumerate(landmarks[474:478]):
@@ -259,8 +351,8 @@ while True:
                 x = int(landmark.x * frame_w)
                 y = int(landmark.y * frame_h)
                 cv2.circle(frame, (x, y), size_primaries, color_leftIris, size_borderPrimaries)
-            if (left[0].y - left[1].y) < 0.004:
-                onBlick()
+            if (left[0].y - left[1].y) < 0.008:
+                on_blink()
             # Pupils
             if show_pupils:
                 lPupil = 468
@@ -312,16 +404,22 @@ while True:
         print("Toggling show rgb to "+str(frame_blank))
     elif k == KEY_ORD_MANUAL_BLINK_TRIGGER:  # (Manually trigger blink)
         print("Manual blink command")
-        onBlick()
+        on_blink()
     elif k == KEY_ORD_AUTO_SET_SECOND:  # (2nd monitor auto)
         print("Automatic setting of right side second monitor")
-        secondMonitorScaleTriggerd(0.5)
-
+        on_second_monitor_scale_triggerd(0.5)
+    elif k == KEY_ORD_ALLOW_SWITCH_ON_MOUSE_DRAG:
+        print("Toggling allow switch when dragging to "+str(allow_switch_when_dragging))
+        allow_switch_when_dragging = not allow_switch_when_dragging
     elif k == 13:  # (ENTER KEY) ord(RESET_KEY):
         print("Enter key")
     elif k == 127:  # Backspace
         print("Backspace")
     elif k == KEY_ORD_KEY_QUIT:
         break
+    elif k == ord("u"):
+        print(":get_mouse_located_in_monitor_num:"+str(get_mouse_located_in_monitor_num())+":")
+        # test = pyautogui.prompt('This lets the user type in a string and press OK.')
+
     elif k != ord("ÿ"):  # Any key
         print("The key you pressed had an number of \""+str(k)+"\"")
