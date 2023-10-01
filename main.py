@@ -51,17 +51,19 @@ meshPointsFaceCenterLine = [ #Ordered top to bottom
 meshPointsCenterPointIndex = 1
 
 # Coloring Decisions
-SCALAR_COLOR_RED           = (0, 0, 255)
-SCALAR_COLOR_LIGHTER_BLUE  = (255, 100, 0)
-SCALAR_COLOR_GREEN         = (0, 255, 0)
-SCALAR_COLOR_YELLOW        = (0, 255, 255)
-SCALAR_COLOR_ORANGE        = (0, 165, 255)
-SCALAR_COLOR_PURPLE        = (128, 0, 128)
-SCALAR_COLOR_PURPLE_BRIGHT = (255, 0, 255)
+SCALAR_COLOR_RED           = (0,  0,  255)
+SCALAR_COLOR_LIGHTER_BLUE  = (255,100,0)
+SCALAR_COLOR_GREEN         = (0,  255,0)
+SCALAR_COLOR_YELLOW        = (0,  255,255)
+SCALAR_COLOR_ORANGE        = (0,  165,255)
+SCALAR_COLOR_PURPLE        = (128,  0,128)
+SCALAR_COLOR_PURPLE_BRIGHT = (255,  0,255)
 SCALAR_COLOR_GRAY          = (100,100,100)
+SCALAR_COLOR_BLACK         = (0,  0,  0)
 
 color_data_NA                 = SCALAR_COLOR_GRAY
 color_calculatedSeperatorLine = SCALAR_COLOR_ORANGE
+color_listedSettings          = SCALAR_COLOR_GRAY
 
 color_faceOutline = SCALAR_COLOR_GREEN
 color_pupilLeft   = SCALAR_COLOR_PURPLE_BRIGHT
@@ -131,7 +133,7 @@ def on_blink():
     global show_faceOutline
     global show_allPoints
 
-    print("Blinked!")
+    print("Toggling between overlay shows")
     show_faceOutline = show_allPoints
     show_allPoints = not show_allPoints
 
@@ -213,6 +215,18 @@ def monitor_move_cutoff_with_check():
         wasChanged = False
     return wasChanged
 
+def display_setting_listing(setting, value, additional):
+    startingY = 40  #270
+    additionalLineHeight = 50
+    global listingsCount
+    value = f"{setting}: {str(value)}"
+    if additional is not None:
+        value = f"{value} ({additional})"
+
+    (text_width, text_height), baseline = cv2.getTextSize(value, font, 1, 2)
+    cv2.putText(frame, value, (1260-text_width, startingY + (listingsCount * additionalLineHeight)), font, 1, color_listedSettings, 2, cv2.LINE_AA)
+    listingsCount += 1
+
 
 while True:
     if not paused:
@@ -244,10 +258,15 @@ while True:
 
         # setupHelperTutorial();
 
+        # RESET EVERY FRAME VALUES
+
         leftCount = -1  #as always has +1
         rightCount = 0
 
         boxDisplayColorHolder = color_data_NA
+        boxDisplayMonitorNum  = -1
+
+        listingsCount = 0  #TODO: Make entire function of listings update only when values change instead of every frame
 
         if landmark_points:
             landmarks = landmark_points[0].landmark
@@ -334,8 +353,10 @@ while True:
 
             if inMainMonitor:
                 boxDisplayColorHolder = SCALAR_COLOR_RED
+                boxDisplayMonitorNum = 0
             else:
                 boxDisplayColorHolder = SCALAR_COLOR_LIGHTER_BLUE
+                boxDisplayMonitorNum = 1
 
             # Iris's
             for id, landmark in enumerate(landmarks[474:478]):
@@ -380,7 +401,12 @@ while True:
 
         # CONTINUE ALWAYS SHOW UI ELEMENTS
         cv2.rectangle(frame, (55, 180), (105, 230), boxDisplayColorHolder, -1) # Should be gray by default
+        cv2.putText(frame, f"#{boxDisplayMonitorNum}", (60, 210), font, 1, SCALAR_COLOR_BLACK, 2, cv2.LINE_AA)
 
+        display_setting_listing("Allow switching when dragging", allow_switch_when_dragging, KEY_ALLOW_SWITCH_ON_MOUSE_DRAG)
+        display_setting_listing("Paused", paused, (KEY_TOGGLE_PAUSE if KEY_TOGGLE_PAUSE != ' ' else "spacebar"))
+        display_setting_listing("Blank background", frame_blank, KEY_BLANK_BACKGROUND_SWITCH)
+        display_setting_listing("Toggle UI face landmarks overlay", KEY_MANUAL_BLINK_TRIGGER, "All Points" if show_allPoints else "Outlines")
 
         # Create a named window with the specified width
         cv2.namedWindow(frameWindowTitle, cv2.WINDOW_NORMAL)
