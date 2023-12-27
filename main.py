@@ -24,7 +24,17 @@ KEY_ORD_ALLOW_SWITCH_ON_MOUSE_DRAG = ord(KEY_ALLOW_SWITCH_ON_MOUSE_DRAG)
 
 font = cv2.FONT_HERSHEY_SIMPLEX
 
-screen_w, screen_h = pyautogui.size()
+#
+main_screen_w, main_screen_h = pyautogui.size()
+# Needs to be set by user operations, by default is just based off of an example second monitor - will be adding persistance so manual editing will not be needed
+second_screen = [
+    1400,  # LeftX
+    2519,  # RightX
+    -822,  # TopY
+    1097  # BottomY
+]
+
+secondMonitorResetPos = ((second_screen[1] - second_screen[0]) / 2 + main_screen_w, (second_screen[3] - second_screen[2]) / 2 + main_screen_h)
 
 videoCaptureDeviceId = 0
 cam = cv2.VideoCapture(videoCaptureDeviceId)
@@ -180,17 +190,16 @@ mouseListener = MouseListener(on_click=on_click, on_release=on_release, on_move=
 mouseThread = threading.Thread(target=mouseListener.start)
 mouseThread.start()
 
-
-# At present, crashes entire program if used
-# def get_if_any_mouse_buttons_held():
-#     mouse_info = pyautogui.mouseInfo()
-#     return (False if mouse_info["left"] is None else True) or (False if mouse_info["right"] is None else True) or (False if mouse_info["middle"] is None else True)
-
 def get_if_any_mouse_buttons_held():
     return mouseButtonTracker[0] or mouseButtonTracker[1] or mouseButtonTracker[2]
 
-def get_if_in_main_monitor():
-    mouseX, mouseY = pyautogui.position()
+def get_if_in_main_monitor(mouseX=None, mouseY=None):
+    if mouseX is None and mouseY is None:  #If all parameters are none (get pos' from piautogui)
+        mouseX, mouseY = pyautogui.position()
+    elif mouseY is None and len(mouseX) == 2:  #Should be if first parameter contains x and y as it is an array
+        mouseY = mouseX[1]
+        mouseX = mouseX[0]
+
     return pyautogui.onScreen(mouseX, mouseY)  #pyautogui only supports 1 monitor so as even though the position is valid on a diffrent screen, pyautogui does not count it
 
 # Currently only works with 2 monitors as pyautogui only supports main monitor
@@ -255,7 +264,6 @@ while True:
         cv2.putText(frame, "RIGHT: ", (40, 100), font, 1, SCALAR_COLOR_LIGHTER_BLUE, 2, cv2.LINE_AA)
         cv2.putText(frame, "Cursr: ", (40, 150), font, 1, SCALAR_COLOR_ORANGE, 2, cv2.LINE_AA)
 
-
         # setupHelperTutorial();
 
         # RESET EVERY FRAME VALUES
@@ -285,11 +293,9 @@ while True:
             yAvgBottom = int((landmarks[323].y + landmarks[288].y)/2 * frame_h)
             # rightDividerSectionATop = (xAvgTop + (xAvgTop - xAvgBottom), yAvgTop + (yAvgTop - yAvgBottom))
             # rightDividerSectionABottom = (xAvgBottom - (xAvgTop - xAvgBottom), yAvgBottom - (yAvgTop - yAvgBottom))
-            rightDividerSectionATop = (xAvgTop + (xAvgTop - xAvgBottom), yAvgTop + (yAvgTop - yAvgBottom))
-            rightDividerSectionABottom = (xAvgBottom - (xAvgTop - xAvgBottom), yAvgBottom - (yAvgTop - yAvgBottom))
 
-            cv2.line(frame, leftDividerSectionATop, leftDividerSectionABottom, color_calculatedSeperatorLine, 2)
-            cv2.line(frame, rightDividerSectionATop, rightDividerSectionABottom, color_calculatedSeperatorLine, 2)
+            # cv2.line(frame, leftDividerSectionATop, leftDividerSectionABottom, color_calculatedSeperatorLine, 2)
+            # cv2.line(frame, rightDividerSectionATop, rightDividerSectionABottom, color_calculatedSeperatorLine, 2)
 
             nextPoint = (int(landmarks[meshPointsFaceCenterLine[0]].x * frame_w), int(landmarks[meshPointsFaceCenterLine[0]].y * frame_h))
             originalPoint = nextPoint
@@ -330,10 +336,10 @@ while True:
             # Show counter values
             cv2.putText(frame, str(int(leftCount/478*100))+"%", (150, 50), font, 1, SCALAR_COLOR_RED, 2, cv2.LINE_AA)  # left
             cv2.putText(frame, str(int(rightCount/478*100))+"%", (150, 100), font, 1, SCALAR_COLOR_LIGHTER_BLUE, 2, cv2.LINE_AA) # right
-            cv2.putText(frame, str(pyautogui.position()), (150, 150), font, 1, SCALAR_COLOR_ORANGE, 2, cv2.LINE_AA) # cursor
+            cv2.putText(frame, str(pyautogui.position()), (150, 150), font, 1, (SCALAR_COLOR_RED if get_if_in_main_monitor() else SCALAR_COLOR_LIGHTER_BLUE), 2, cv2.LINE_AA) # cursor
 
             # if allow_switch_when_dragging or (not get_if_any_mouse_buttons_held()):
-            if allow_switch_when_dragging:  #Ignoreing dragging
+            if allow_switch_when_dragging:  #Ignore dragging
                 monitor_move_cutoff_with_check()
             elif not get_if_any_mouse_buttons_held():  #Not ignoring dragging and not held
                 # if lastLeftMouseLocationBeforeDrag[0] is None:  #For after dragging, see if in a new monitor
@@ -347,6 +353,11 @@ while True:
                         pyautogui.moveTo(tempCurrentPosStore)
                     lastLeftMouseMonitorBeforeDrag = get_mouse_located_in_monitor_num()  # Reset so it is not called again
 
+            # Check if both saved positions are in the same monitor - checks if second monitor mouse save is in main
+            if(get_if_in_main_monitor(savedMonitorMousePositions[1])):
+                savedMonitorMousePositions[0] = savedMonitorMousePositions[1]
+                savedMonitorMousePositions[1] = secondMonitorResetPos
+                pyautogui.moveTo(savedMonitorMousePositions[0].x, savedMonitorMousePositions[0].y)
 
 
             # else # cutoff line does not trigger change, stays as it was
@@ -364,8 +375,8 @@ while True:
                 y = int(landmark.y * frame_h)
                 cv2.circle(frame, (x, y), size_primaries, color_RightIris, size_borderPrimaries)
                 if id == 1:
-                    screen_x = screen_w * landmark.x
-                    screen_y = screen_h * landmark.y
+                    screen_x = main_screen_w * landmark.x
+                    screen_y = main_screen_h * landmark.y
                     # pyautogui.moveTo(screen_x, screen_y)
             left = [landmarks[145], landmarks[159]]
             for landmark in left:
